@@ -1,0 +1,49 @@
+#+title: xhci driver
+#+author: lhkwqy
+#+date:
+
+* xhci-plat driver
+
+** requirement
+1. a xhci platform device
+   example:
+
+** probe
+
+
+1) Init a *hc driver interface* (~struct hc_driver~) with ~xhci_init_driver~;
+
+2) Get hardware resoures from platform device or other ways.
+
+3) Create a *hcd* (~struct usb_hcd~) with ~__usb_create_hcd~ or ~usb_create_hcd~. The xhci register area is saved in the regs, rsrc_start and rsrc_len field of hcd.
+
+4) Cause we use xhci protocol, the priv field of *hcd* should be set to *xhci hcd* (~struct xhci_hcd~).
+   1. get reg_clk and clk from platform_device and save them in the related fields in *xhci hcd*
+
+
+* xhci-pci driver
+
+#+begin_src dot :file pic/xhci-pci-probe.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+
+      xhci_pci_probe -> "get driver data from pci device";
+      xhci_pci_probe -> "get reset";
+      xhci_pci_probe -> reset_control_reset;
+      xhci_pci_probe -> "prevent runtime suspending"
+      xhci_pci_probe -> usb_hcd_pci_probe
+  }
+#+end_src
+
+In usb_hcd_pci_probe, if the usb controller implement as xhci controller, we don't need to alloc irqs for xhci driver. xhci driver has its own irq management.
+
+#+begin_src dot :file pic/usb_hcd_pci_probe.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+  }
+
+#+end_src
+
+* xhci.c

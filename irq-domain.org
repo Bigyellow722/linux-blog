@@ -1,0 +1,19 @@
+#+title: The introduction of irq subsystem of linux
+#+author: lhkwqy
+#+date:
+
+* interrupt controller
+
+** x86
+
+*** Advanced programmable interrupt controller(APIC)
+  [[./lapic-overview.png]]
+
+**** local APIC
+
+
+  
+* goals of irq_domain:
+
+This is simple when there is only one interrupt controller, bus in systems with multiple interrupt controllers the kernel must ensure that each one gets assigned non-overlapping allocations of Linux Irq numbers.
+

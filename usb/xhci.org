@@ -12,9 +12,35 @@
 [[./pic/pagesize-reg.png]]
 
 
+** USB device authorization
+
+[[https://lwn.net/Articles/241980/][lwn-usb-device-authorization]]
+
+the authorized_default behaviour is authorized for all devices except wireless.
+
+
+** related about DMA
+
+As following code shows, usb hcd driver will create 4 dma pools, whose size are 32, 128, 512, 2048 respectively.
+
+#+begin_src c
+    static size_t pool_max[HCD_BUFFER_POOLS] = {
+	  32, 128, 512, 2048,
+    };
+#+end_src
+
 * about software
 
-#+begin_src dot :file pic/usb-add-hcd.png
+** the structure of xhci_hc_driver
+
+*** flags
+
+The default value is ~HCD_MEMORY | HCD_DMA | HCD_USB3 | HCD_SHARED | HCD_BH~
+
+
+** register a usb hcd into system 
+
+#+begin_src dot :file pic/usb-create-hcd.png
   digraph {
       rankdir=LR;
       node [ shape=record ];
@@ -25,24 +51,53 @@
       __usb_create_hcd -> "timer_setup(rh_timer_func)";
       __usb_create_hcd -> "INIT_WORK(&hcd->wakeup_work, hcd_resume_work)";
       __usb_create_hcd -> "INIT_WORK(&hcd->died_work, hcd_died_work)";
-    
-      usb_add_hcd -> usb_phy_roothub_alloc;
-      usb_add_hcd -> usb_phy_roothub_init;
-      usb_add_hcd -> usb_phy_roothub_set_mode;
-      usb_add_hcd -> usb_phy_roothub_power_on;
+      __usb_create_hcd -> "set driver->flags to hcd->flags"
+
+  }
+
+
+#+end_src
+
+#+RESULTS:
+[[file:pic/usb-create-hcd.png]]
+
+#+begin_src dot :file pic/usb-add-hcd.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+
+      check_whether_skip_phy_init [ label = "if usb hcd is primary hcd and skip_phy_initialization is not set" ];
+      set_usb_authorize [ label = "set default value to usb authorize flag" ];
+      set_hcd_flag [ label = "set hcd status to HW_ACCESSIBLE and INTF_AUTHORIZED" ];
+      set_roothub_speed [ label = "according to hcd speed, set roothub speed" ];
+      set_roothub_running [label = "set hcd status to roothub running" ];
+
+      usb_add_hcd -> check_whether_skip_phy_init;
+      check_whether_skip_phy_init -> usb_phy_roothub_alloc;
+      check_whether_skip_phy_init -> usb_phy_roothub_init;
+      check_whether_skip_phy_init -> usb_phy_roothub_set_mode;
+      check_whether_skip_phy_init -> usb_phy_roothub_power_on;
+      usb_add_hcd -> set_usb_authorize;
+      usb_add_hcd -> set_hcd_flag;
       usb_add_hcd -> hcd_buffer_create;
+      /* alloc a busnum, and send USB_BUS_ADD to notifier call chain */
       usb_add_hcd -> usb_register_bus;
+      /* alloc a roothub device */
       usb_add_hcd -> usb_alloc_dev;
-      usb_add_hcd -> "hcd->driver->reset";
+      usb_add_hcd -> set_roothub_speed;
+      usb_add_hcd -> set_roothub_running;
+      usb_add_hcd -> "hcd->driver->reset (xhci_pci_setup in xhci-pci.c)";
+      usb_add_hcd -> "hcd->rh_pollable = 1";
       usb_add_hcd -> usb_phy_roothub_calibrate;
       usb_add_hcd -> "init_giveback_urb_bh(&hcd->high_prio_bh)";
       usb_add_hcd -> "init_giveback_urb_bh(&hcd->low_prio_bh)";
       usb_add_hcd -> usb_hcd_request_irqs;
-      usb_add_hcd -> "hcd->driver->start";
+      usb_add_hcd -> "set hc state to running";
+      usb_add_hcd -> "hcd->driver->start (xhci_run)";
       usb_add_hcd -> register_root_hub;
       usb_add_hcd -> usb_hcd_poll_rh_status;
   }
-  
+
 
 #+end_src
 

@@ -86,3 +86,9 @@
 	  .pm =		&usb_port_pm_ops,
   };
 #+end_src
+
+
+
+
+* hub add a ~usb_device~
+

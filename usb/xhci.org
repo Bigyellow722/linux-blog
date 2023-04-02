@@ -348,6 +348,43 @@ The default value is ~HCD_MEMORY | HCD_DMA | HCD_USB3 | HCD_SHARED | HCD_BH~
 [[file:pic/usb-add-hcd.png]]
 
 
+*** the general interfaces of xhci driver
+
+1. reset:
+
+   a host controller driver maybe implement its own reset function. such as ~xhci_pci_setup~ in xhci-pci driver and ~xhci_plat_setup~ in xhci-plat driver.
+   the reset interface performs two processes in general:
+
+   - initializing quirk of ~struct usb_hcd *hcd~.
+
+   - calling ~xhci_gen_setup~. 
+
+     #+begin_src dot :file pic/xhci_gen_setup.png
+       digraph {
+	   rankdir="LR";
+	   node [shape="rect" ];
+	   init_struct_xhci [label="configure base register address and quirks"];
+	   init
+
+
+	   xhci_gen_setup -> init_struct_xhci;
+	   xhci_gen_setup -> xhci_halt;
+	   xhci_gen_setup -> xhci_reset;
+	   xhci_gen_setup -> set_dma_mask;
+	   xhci_gen_setup -> xhci_init;
+	   xhci_gen_setup -> whether_xhci_hcd_is_usb3;
+
+	   xhci_init -> set_link_trb_quirk;
+	   xhci_init -> xhci_mem_init
+
+	   xhci_mem_init -> init_staff_aboout_command;
+       }
+
+     #+end_src
+
+     #+RESULTS:
+     [[file:pic/xhci_gen_setup.png]]
+
 ** register a root hub
 
 #+begin_src dot :file pic/register_root_hub

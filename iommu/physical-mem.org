@@ -1,0 +1,26 @@
+#+title: Physical Memory Model
+#+author: lhkwqy
+#+date:
+
+
+Regardless of the selected memory model, there exists one-to-one mapping between the physical page frame number (PFN) and the corresponding struct page.
+
+* ~FLATMEM~
+
+This model is suitable for non-NUMA systems with contiguous, or mostly contiguous, physical memory.
+
+There is global ~mem_map~ array that maps the entire physical memory.
+
+To allocate the ~mem_map~ array, architecture specific setup code should call ~free_are_init~. The mappings array is not usable until the call to ~memblock_free_all~ that hands all the memory to the page allocator. 
+
+#+begin_src comment
+
+  
+
+#+end_src
+
+* ~SPARSEMEM~
+
+
+
+* ~ZONE_DEVICE~

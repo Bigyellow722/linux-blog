@@ -240,6 +240,11 @@ file:pic/usb-no-op-trb.png
 
 ** USB controller initialization
 
+*** allocate memory for xhci
+
+In xhci_mem_init, use dma_alloc_coherent to allocate dma buffer for device context base address array.
+
+
 
 
 ** USB device authorization

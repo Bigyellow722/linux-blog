@@ -1,0 +1,85 @@
+#+title: xhci driver
+#+author: lhkwqy
+#+date:
+
+* xhci-plat driver
+
+** requirement
+1. a xhci platform device
+   example:
+
+** probe
+
+
+- Init a *hc driver interface* (~struct hc_driver~) with ~xhci_init_driver~;
+
+- Get hardware resoures from platform device or other ways.
+
+- Create a *hcd* (~struct usb_hcd~) with ~__usb_create_hcd~ or ~usb_create_hcd~. The xhci register area is saved in the regs, ~rsrc_start~ and ~rsrc_len~ field of hcd.
+
+- Cause we use xhci protocol, the priv field of *hcd* should be set to *xhci hcd* (~struct xhci_hcd~).
+  1) get ~reg_clk~ and clk from ~platform_device~ and save them in the related fields in *xhci hcd*
+
+
+* xhci-pci driver
+
+#+begin_src dot :file pic/xhci-pci-probe.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+
+      initialize_the_field_of_xhci [ label = "" ];
+
+      xhci_pci_probe -> "get driver data from pci device";
+      xhci_pci_probe -> "get reset";
+      xhci_pci_probe -> reset_control_reset;
+      xhci_pci_probe -> "prevent runtime suspending"
+      /* register the usb 2.0 roothub */
+      xhci_pci_probe -> usb_hcd_pci_probe
+
+  }
+#+end_src
+
+#+RESULTS:
+[[file:pic/xhci-pci-probe.png]]
+
+In ~usb_hcd_pci_probe~, if the usb controller implement as xhci controller, we don't need to alloc irqs for xhci driver. xhci driver has its own irq management.
+
+#+begin_src dot :file pic/usb_hcd_pci_probe.png
+  digraph {
+      rankdir="LR";
+
+      dummy1 [ style=invis ];
+      dummy2 [ style=invis ];
+
+      alloc_irq [ label = "if usb version is less than usb3.0  alloc irq"; ];
+      get_resources [ label = "if hcd regs use memory  get resource from pci deivce, the remap"; ];
+      judge_ehci [ label = "whether the controller is ehci"; shape = diamond; ];
+      add_ehci_controller [ label = "poll other pci functions in the same slot  call echi_pre_add to add an EHCI controller" ];
+      add_non_ehci_controller [ label = "test" ];
+
+      usb_hcd_pci_probe -> alloc_irq;
+      usb_hcd_pci_probe -> usb_create_hcd;
+      usb_hcd_pci_probe -> get_resources;
+      usb_hcd_pci_probe -> judge_ehci;
+
+      judge_ehci -> add_ehci_controller [ label = "yes" ];
+      judge_ehci -> add_non_ehci_controller [ label = "no" ];
+
+      {
+	  rank=same;
+	  // Here you enforce the desired order with "invisible" edges and arrowheads
+	  dummy1 -> alloc_irq -> usb_create_hcd -> get_resources -> judge_ehci -> dummy2 [ style=invis ];
+	  rankdir="TB";
+      }
+
+  }
+
+#+end_src
+
+#+ATTR_HTML: :width 1000
+#+ATTR_HTML: :height 500
+#+RESULTS:
+[[file:pic/usb_hcd_pci_probe.png]]
+
+

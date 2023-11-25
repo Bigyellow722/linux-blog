@@ -1,0 +1,411 @@
+#+title: xhci driver implementation
+#+author: lhkwqy
+#+date:
+
+
+* about hardware
+
+** the terms in xhci
+
+- Device Slot
+
+  the term *Device Slot* is used as a generic reference to a set of xHCI data structures associated with an individual USB device. Each device is represented by an entry in the Device Context Base Address Array, a register in the Doorbell Array register, and a device's Device Context.
+
+- Slot ID
+
+  The term *Slot ID* refers to the index used to identify a specific Device Slot. For example the value of Slot ID will be used as an index to identify a specific entry in the Device Context Base Address Array.
+
+- Command Ring
+
+  The *Command Ring* is used by software to pass device and host related commands to the xHC.
+  
+- Event Ring
+
+  The *Event Ring* is used by the xHC to pass command completion and asynchronous events to software.
+
+- Transfer Ring
+
+  The *Transfer Ring* is used by software to schedule work items for a single USB Endpoint. A Transfer Ring is organized as a circular queue of Transfer Descriptor(TD) data structures, where each Transfer Descriptor defines one or more Data Buffers that will be moved to or from the USB
+
+
+** Interface Architecture
+
+[[./pic/usb-arch-overview.png]]
+
+*** Host Configuration Space
+
+Every xHC implementation shall include a means of identifying and enumerating the host controller by system software.
+
+*** MMIO Space
+
+The Register Space represents the hardware registers presented by the xHC to system software that reside in the Memory Address Space.
+
+- Capability Registers
+
+- Extended Capability Registers
+
+- Operational Registers and Runtime Registers
+
+- Doorbell Registers
+
+  The Doorbell Array is an array of up to 256 Doorbell Registers, which supports up to 255 USB devicers or hubs.
+  Each Doorbell Register provides system software with a mechanism for notifying the xHC if it has Slot or Endpoint related work to perform.
+ #+begin_src comment
+  Doorbell register 0 is allocated to the Host Controller for Command Ring management.
+ #+end_src
+
+*** Host memory
+
+This space is defined by the control data structures and data buffers that are allocated and managed by the xHC Driver to enable the endpoint traffic of individual devices.
+
+*** Transfer Types
+
+The xHCI provides support for two categories of USB transfer types:
+
+- asynchronous
+  - Control
+  - Bulk
+- periodic
+  - Isochronous transfer
+  - Interrupt transfer
+
+the xHCI provides a homogeneous mechanism (Transfer Rings) for each category of transfer type.
+
+
+** Command Interface
+
+** Device Context Base Address Array
+
+The Device Context Base Address Array(DCBAA) provides the xHC with a Slot ID based lookup table for accessubf the Device Context data structure associated with each slot.
+
+When a device attach is detected: system software initializes a Device Context data structure, requests a Slot ID from the xHC, and inserts a pointer to the newly created Device Context into the DCBAA at the location indicated by the Slot ID.
+
+#+begin_src comment
+The first entry (Slot ID = '0') in the Device Context Base Address Array is utilized by the xHCI Scratchpad mechanism.  
+#+end_src
+
+*** Scratchpad Buffers
+The Scratchpad Allocation mechanism of the xHCI allows the xHC to request one or more PAGESIZE buffers of system memory for storing internal state.
+
+The location of the Scratchpad Buffer Array is defined by entry 0 of the Device Context Base Address Array
+
+The size of the Scratchpad Buffer Array is defined by the Max Scratchpad Buffers field in the HCSPARAMS2 Register
+
+the description of the element in the scratchpad buffer       
+
+[[file:pic/usb-scratchpad-buffer-element.png]]
+
+Features of xHC Scratchpad Allocation:
+- The xHC may request multiple Scratchpad Buffers
+- When accessing a Scratchpad Buffer the xHC shall not access system memory addresses outside of the PAGESIZE memory block allocated by system software.
+- System software shall not read or write a Scratchpad buffer. System software writes to the Scratchpad buffer memory may result in undefined xHC operation.
+- The content of the Scratchpad Buffers shall remain intact across system power events including D3.cold if SPR = ‘1’. 
+
+The following operations take place to allocate Scratchpad Buffers to the xHC:
+1. Software examines the Max Scratchpad Buffers Hi and Lo fields in the HCSPARAMS2 register
+2. Software allocates a Scratchpad Buffer Array with Max Scratchpad Buffers entries.
+3. Software writes the base address of the Scratchpad Buffer Array to the DCBAA (Slot 0) entry.
+4. For each entry in the Scratchpad Buffer Array:
+   1. Software allocates a PAGESIZE Scratchpad Buffer.
+   2. Software clears the Scratchpad Buffer to ‘0’.
+   3. Software writes the base address of the allocated Scratchpad Buffer to associated entry in the Scratchpad Buffer Array.
+      
+** Contexts
+
+*** Device Context
+
+The Device Context data structure is managed by the xHC and used to report device configuration and state information to system software.
+
+The Device Context data structure consists of up to 32 entries. The first entry (entry_0) is the Slot Context data structure and the remaining entries are Endpoint Context data structures.
+
+[[file:pic/usb-device-context.png]]
+
+*Device Context Index*
+
+For Isoch, Interrupt, or Bulk type endpoints the DCI is calculated from the Endpoint Number and Direction with the following formula
+#+begin_src comment
+DCI = (Endpoint Number * 2) + Direction  
+#+end_src
+
+For Control type endpoints:
+
+#+begin_src comment
+DCI = (Endpoint Number * 2) + 1
+#+end_src
+
+*** Slot Context
+
+file:pic/usb-slot-context.png
+
+*** Endpoint Context
+
+file:pic/usb-ep-context.png
+
+Most of the fields of the Endpoint Context contain endpoint related type, control, state, and bandwidth information, that correspond to the information in the associated endpoint related descriptors reported by the device.
+
+An Endpoint Context also defines a TR Dequeue Pointer field, which norm ally provides a pointer to the Transfer Ring associated with the pipe.
+
+There is a special case for USB3 Bulk endpoints where Streams may be associated with an endpoint.
+
+** Rings
+
+Three types of Rings are used by the xHc to communicate and execute USB operations:
+
+*** Command Ring
+
+  One for the xHC.
+
+  The Command Ring is used by system software to issue commands to the xHC.
+  
+*** Event Ring
+
+  One for each Interrupter.
+
+  The Event Ring is used by the xHC to return status and results of commands and transfers to system software.
+  
+*** Transfer Ring
+
+  One for each Endpoint or Stream.
+
+  Transfer Rings are used to move data between system memory buffers and device endpoints
+
+for example:
+
+[[file:pic/usb-transfer-ring-example.png]]
+
+Transfers to and from the Endpoint of a USB device are defined using a Transfer Descriptor (TD), which consists of one or more Transfer Request Blocks.
+
+steps:
+
+1. software defines a Transfer Ring by allocating and initializing a memory buffer for it.
+2. then setting the Enqueue and Dequeue Pointers to the address of this memory buffer and writing it into the TR Dequeue Pointer field of the associated Endpoint or Stream Context. 
+
+
+Each memory buffer that comprises a Transfer Ring is called a Segment. Multiple Segments may be linked together to form large rings, and Segments may be added or removed
+from a ring during runtime.
+
+*Transfer Ring management*
+
+[[file:pic/usb-transfer-ring-index.png]]
+
+** Transfer Request Block
+
+*** TRB Template
+
+file:pic/usb-trb-template.png
+
+*** Transfer TRBs
+
+**** normal TRB
+
+A Normal TRB is used in several ways:
+
+1. exclusively on Bulk and Interrupt Transfer Rings for normal and Scatter/Gather operations.
+2. to define additional data buffers for Fine and Coarse Grain Scatter/Gather operations on Isoch Transfer Rings.
+3. to define the Data stage information for Control Transfer Rings.
+
+file:pic/usb-normal-trb.png
+
+
+**** Control TRB
+
+Control transfers require two or three TDs to define them:
+
+- Setup stage TD
+
+file:pic/usb-setup-trb.png
+  
+- [optional] Data stage TD
+
+file:pic/usb-data-trb.png
+  
+- Status stage TD
+
+file:pic/usb-status-trb.png
+
+
+
+**** Isoch TRB
+
+file:pic/usb-isoch-trb.png
+
+
+**** No op TRB
+
+file:pic/usb-no-op-trb.png
+
+** Event Ring Segment Table
+
+* about software
+
+** USB controller initialization
+
+*** allocate memory for xhci
+
+In ~xhci_mem_init~, use dma_alloc_coherent to allocate dma buffer for device context base address array.
+
+
+
+
+** USB device authorization
+
+[[https://lwn.net/Articles/241980/][lwn-usb-device-authorization]]
+
+the ~authorized_default~ behaviour is authorized for all devices except wireless.
+
+
+** related about DMA
+
+As following code shows, usb hcd driver will create 4 dma pools, whose size are 32, 128, 512, 2048 respectively.
+
+#+begin_src c
+    static size_t pool_max[HCD_BUFFER_POOLS] = {
+	  32, 128, 512, 2048,
+    };
+#+end_src
+
+
+
+** the structure of ~xhci_hc_driver~
+
+*** flags
+
+The default value is ~HCD_MEMORY | HCD_DMA | HCD_USB3 | HCD_SHARED | HCD_BH~
+
+
+** register a usb hcd into system 
+
+#+begin_src dot :file pic/usb-create-hcd.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+
+      __usb_create_hcd -> "kzalloc for struct hcd";
+      __usb_create_hcd -> "initialize address0_metux and bandwidth_mutex";
+      __usb_create_hcd -> usb_bus_init;
+      __usb_create_hcd -> "timer_setup(rh_timer_func)";
+      __usb_create_hcd -> "INIT_WORK(&hcd->wakeup_work, hcd_resume_work)";
+      __usb_create_hcd -> "INIT_WORK(&hcd->died_work, hcd_died_work)";
+      __usb_create_hcd -> "set driver->flags to hcd->flags"
+
+  }
+
+
+#+end_src
+
+#+ATTR_HTML: :width 400
+#+RESULTS:
+[[file:pic/usb-create-hcd.png]]
+
+#+begin_src dot :file pic/usb-add-hcd.png
+  digraph {
+      rankdir=LR;
+      //node [ shape=record ];
+
+      begin_node [ style=invis ];
+      end_node [ style=invis ];
+
+      check_whether_skip_phy_init [ label = "if usb hcd is primary hcd and skip_phy_initialization is not set" ];
+      set_usb_authorize [ label = "set default value to usb authorize flag" ];
+      set_hcd_flag [ label = "set hcd status to HW_ACCESSIBLE and INTF_AUTHORIZED" ];
+      set_roothub_speed [ label = "according to hcd speed, set roothub speed" ];
+      set_roothub_running [ label = "set hcd status to roothub running" ];
+      hcd_reset [ label = "hcd->driver->reset" ]
+
+      usb_add_hcd -> check_whether_skip_phy_init;
+      check_whether_skip_phy_init -> usb_phy_roothub_alloc;
+      check_whether_skip_phy_init -> usb_phy_roothub_init;
+      check_whether_skip_phy_init -> usb_phy_roothub_set_mode;
+      check_whether_skip_phy_init -> usb_phy_roothub_power_on;
+      usb_add_hcd -> set_usb_authorize;
+      usb_add_hcd -> set_hcd_flag;
+      usb_add_hcd -> hcd_buffer_create;
+      /* alloc a busnum, and send USB_BUS_ADD to notifier call chain */
+      usb_add_hcd -> usb_register_bus;
+      /* alloc a roothub device */
+      usb_add_hcd -> usb_alloc_dev;
+      usb_add_hcd -> set_roothub_speed;
+      usb_add_hcd -> set_roothub_running;
+      usb_add_hcd -> hcd_reset;
+      usb_add_hcd -> "hcd->rh_pollable = 1";
+      usb_add_hcd -> usb_phy_roothub_calibrate;
+      usb_add_hcd -> "init_giveback_urb_bh(&hcd->high_prio_bh)";
+      usb_add_hcd -> "init_giveback_urb_bh(&hcd->low_prio_bh)";
+      usb_add_hcd -> usb_hcd_request_irqs;
+      usb_add_hcd -> "set hc state to running";
+      usb_add_hcd -> "hcd->driver->start (xhci_run)";
+      usb_add_hcd -> register_root_hub;
+      usb_add_hcd -> usb_hcd_poll_rh_status;
+
+      {
+	  rank=same;
+	  begin_node -> check_whether_skip_phy_init -> set_usb_authorize -> set_hcd_flag -> hcd_buffer_create -> usb_alloc_dev -> set_roothub_speed -> set_roothub_running [ style=invis ];
+	  rankdir="TB";
+      }
+  }
+
+
+#+end_src
+
+#+ATTR_HTML: :width 700
+#+ATTR_ORG: :width 700
+#+RESULTS:
+[[file:pic/usb-add-hcd.png]]
+
+
+*** the general interfaces of xhci driver
+
+1. reset:
+
+   a host controller driver maybe implement its own reset function. such as ~xhci_pci_setup~ in xhci-pci driver and ~xhci_plat_setup~ in xhci-plat driver.
+   the reset interface performs two processes in general:
+
+   - initializing quirk of ~struct usb_hcd *hcd~.
+
+   - calling ~xhci_gen_setup~. 
+
+     #+begin_src dot :file pic/xhci_gen_setup.png
+       digraph {
+	   rankdir="LR";
+	   node [shape="rect" ];
+	   init_struct_xhci [label="configure base register address and quirks"];
+	   init
+
+
+	   xhci_gen_setup -> init_struct_xhci;
+	   xhci_gen_setup -> xhci_halt;
+	   xhci_gen_setup -> xhci_reset;
+	   xhci_gen_setup -> set_dma_mask;
+	   xhci_gen_setup -> xhci_init;
+	   xhci_gen_setup -> whether_xhci_hcd_is_usb3;
+
+	   xhci_init -> set_link_trb_quirk;
+	   xhci_init -> xhci_mem_init
+
+	   xhci_mem_init -> init_staff_aboout_command;
+       }
+
+     #+end_src
+
+     #+RESULTS:
+     [[file:pic/xhci_gen_setup.png]]
+
+** register a root hub
+
+#+begin_src dot :file pic/register_root_hub
+  digraph {
+	  rankdir=LR;
+	  node [ shape=record ];
+
+	  register_root_hub;
+  }
+
+#+end_src
+
+#+RESULTS:
+[[file:pic/register_root_hub]]
+
+
+
+
+

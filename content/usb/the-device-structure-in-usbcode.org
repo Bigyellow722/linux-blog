@@ -1,0 +1,86 @@
+#+title: The structure of usb device
+#+author: lhkwqy
+#+date:
+
+* allocate a usb device
+
+** function declarition
+
+#+begin_src c
+  struct usb_device *usb_alloc_dev(struct usb_device *parent,
+				 struct usb_bus *bus, unsigned port1)
+#+end_src
+
+- input parameters:
+  - parent: hub to which device is connected; null to allocate a root hub
+  - bus: bus used to access the device
+  - port1: one-based index of port;
+
+** flow
+
+what fields a struct device needs to initialize are the bus which device attach to, the type of device, the device groups of device
+
+
+#+begin_src dot :file pic/usb_alloc_dev.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+
+      alloc_memory [ label="alloc memory for usb_device" ];
+      hcd_alloc_dev [ label="call alloc_dev implemented by hcd driver(ep xhci_alloc_dev)" ];
+      init_usb_device [ label="" ];
+
+      usb_alloc_dev -> alloc_memory;
+      usb_alloc_dev -> hcd_alloc_dev;
+
+
+
+  }
+#+end_src
+
+
+* the device type
+
+** ~usb_device~
+
+#+begin_src c
+  struct device_type usb_device_type = {
+	  .name =		"usb_device",
+	  .release =	usb_release_dev,
+	  .uevent =	usb_dev_uevent,
+	  .devnode = 	usb_devnode,
+  #ifdef CONFIG_PM
+	  .pm =		&usb_device_pm_ops,
+  #endif
+  };
+#+end_src
+
+** usb interface device
+
+#+begin_src c
+  struct device_type usb_if_device_type = {
+	  .name =		"usb_interface",
+	  .release =	usb_release_interface,
+	  .uevent =	usb_if_uevent,
+  };
+#+end_src
+
+
+** usb endpoint device
+
+#+begin_src c
+  struct device_type usb_ep_device_type = {
+	  .name =		"usb_endpoint",
+	  .release = ep_device_release,
+  };
+#+end_src
+
+** usb port device
+
+#+begin_src c
+  struct device_type usb_port_device_type = {
+	  .name =		"usb_port",
+	  .release =	usb_port_device_release,
+	  .pm =		&usb_port_pm_ops,
+  };
+#+end_src

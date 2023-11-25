@@ -1,0 +1,19 @@
+#+title: describing physical memory in linux kernel
+#+author: lhkwqy
+#+date:
+
+* the hierarchy of data structure related physical memory in kernel
+
+There might be a bank of memory assigned to each CPU or a bank of memory very suitable for DMA near device cards.
+
+Each bank is called a *node*
+
+** Node
+
+the concept is represented under Linux by a ~struct pglist_data~
+
+
+
+** zones
+
+**

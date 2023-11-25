@@ -1,0 +1,75 @@
+#+title: The structures in usb subsystem
+#+author: lhkwqy
+#+date:
+
+* overview
+
+#+begin_src dot :file pic/usb-structure.png
+  digraph {
+      rankdir=LR;
+      node [ shape=record ];
+      subgraph cluster_usb_host_endpoint {
+	  label="usb_host_endpoint";
+	  comment="host-side endpoint descriptor and queue";
+	  struct1 [
+		   label = "<port1_0>desc|ss_ep_comp|ssp_isoc_ep_comp|<port1_1>urb_list|hcpriv|ep_dev|extra|extralen|enabled|streams";
+	  ];
+      }
+
+      subgraph cluster_usb_endpoint_descriptor {
+	  label="usb_endpoint_descriptor";
+	  struct2 [
+		   label="bLength|bDescriptorType|bEndpointAddress|bmAttributes|wMaxPacketSize|bInterval|bRefresh|bSynchAddress";
+	  ];
+      }
+
+      subgraph cluster_usb_interface {
+	  label="usb_interface";
+	  comment="what usb device driver talk to";
+	  struct3 [
+		   label="<port3_0>altsetting|cur_altsetting|num_altsetting|intf_assoc|minor|condition|some status bit ...|dev|usb_dev|pm_usage_cnt|reset_ws"
+	  ];
+      }
+
+      subgraph cluster_usb_interface_descriptor {
+	  label="usb_interface_descriptor";
+	  struct4 [
+		   label="bLength|
+		   bDescriptorType|
+		   bInterfaceNumber|
+		   bAlternateSetting|
+		   bNumEndpoints|
+		   bInterfaceClass|
+		   bInterfaceSubClass|
+		   bInterfaceProtocol|
+		   iInterface";
+	  ];
+      }
+
+      subgraph cluster_usb_host_interface {
+	  label="usb_host_interface";
+	  struct5 [
+		   label="<port5_0>desc|
+		   extralen|
+		   extra|
+		   endpoint|
+		   string"
+	  ];
+      }
+
+      usb_request -> struct1:port1_1;
+      struct2 -> struct1:port1_0;
+      struct5 -> struct3:port3_0;
+      struct4 -> struct5:port5_0;
+  }
+#+end_src
+
+#+RESULTS:
+[[file:pic/usb-structure.png]]
+
+* ~struct usb_hcd~
+
+In software stack of usb, the usb hcd descript the host controller driver, which is a bus driver.
+
+
+

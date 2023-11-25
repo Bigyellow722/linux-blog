@@ -1,0 +1,189 @@
+#+title: io apic
+#+author: lhkwqy
+#+date:
+
+
+* io-apic block
+[[file:pic/ioapic-block.png]]
+
+
+* io-apic in soc
+
+[[file:pic/ioapic-in-soc.png]]
+
+* io-apic register mapping
+
+Using 2 registers to access IOAPIC register
+
+- IOREGSEL: 0xfec00000
+
+  - [31:8]: reserved
+
+  - [7:0]: APIC Register Address
+  
+  
+- IOWIN: 0xfec00010
+
+  - [31:0]: APIC Register Data
+
+
+#+begin_src c
+  struct io_apic {
+	  unsigned int index;
+	  unsigned int unused[3];
+	  unsigned int data;
+	  unsigned int unused2[11];
+	  unsigned int eoi;
+  };
+
+#+end_src
+
+IOAPIC register
+
+- IOAPICID
+- IOAPICVER
+- IOAPICARB
+- IOREDTBL[23:0]
+
+
+* io-apic init flow
+
+
+#+begin_src dot :file pic/setup-io-apic.png
+  digraph {
+	  rankdir = LR
+	  node [shape=record]
+
+	  start_kernel -> time_init;
+	  time_init -> x86_late_time_init;
+	  acpi_intr [label = "x86_init.irqs.intr_mode_init();"]
+	  x86_late_time_init -> acpi_intr;
+
+	  apic_intr_mode_init -> acpi_bsp_setup;
+	  acpi_bsp_setup -> setup_local_APIC;
+	  acpi_bsp_setup -> enable_IO_APIC;
+	  acpi_bsp_setup -> end_local_APIC_setup;
+	  acpi_bsp_setup -> irq_remap_enable_fault_handling;
+	  acpi_bsp_setup -> setup_IO_APIC;
+	  acpi_bsp_setup -> lapic_update_legacy_vectors;
+
+  }
+
+#+end_src
+
+#+RESULTS:
+[[file:pic/setup-io-apic.png]]
+
+#+begin_src comment
+
+  x86_init.irqs.intr_mode_init = apic_intr_mode_init;
+
+#+end_src
+
+
+#+begin_src dot :file pic/acpi_boot_init.png
+	digraph {
+	    rankdir = LR
+	    node [shape=record]
+	    setup_arch -> acpi_boot_init;
+
+	    acpi_boot_init -> dmi_check_system;
+
+	    acpi_table_parse1 [label = "acpi_table_parse(ACPI_SIG_BOOT, acpi_parse_sbf);"]
+	    acpi_boot_init -> acpi_table_parse1;
+	    acpi_table_parse2 [label = "acpi_table_parse(ACPI_SIG_FADT, acpi_parse_fadt);"]
+	    acpi_boot_init -> acpi_table_parse2;
+
+	    acpi_boot_init -> acpi_process_madt;
+	    acpi_process_madt -> acpi_parse_madt_ioapic_entries;
+	    acpi_parse_madt_ioapic_entries -> acpi_parse_ioapic;
+
+	    acpi_table_parse3 [label = "acpi_table_parse(ACPI_SIG_HPET, acpi_parse_hpet);"]
+	    acpi_boot_init -> acpi_table_parse3;
+
+	    acpi_table_parse4 [label = "acpi_table_parse(ACPI_SIG_HPET, acpi_parse_hpet);"]
+	    acpi_boot_init -> acpi_table_parse4;
+
+
+  }
+
+#+end_src
+
+#+RESULTS:
+#+ATTR_HTML: :width 100%
+[[file:pic/acpi_boot_init.png]]
+
+
+** the structure of ioapic in madt table
+
+#+begin_src c
+  struct acpi_madt_io_apic {
+	  struct acpi_subtable_header header;
+	  u8 id;			/* I/O APIC ID */
+	  u8 reserved;		/* reserved - must be zero */
+	  u32 address;		/* APIC physical address */
+	  u32 global_irq_base;	/* Global system interrupt where INTI lines start */
+  };
+#+end_src
+
+
+** the structure of ioapic dev
+
+#+begin_src c
+
+  struct mpc_ioapic {
+	  unsigned char type;
+	  unsigned char apicid; /* IOAPICID */
+	  unsigned char apicver; /* IOAPICVER */
+	  unsigned char flags;
+	  unsigned int apicaddr; /* IOREGSEL, point to struct io_apic */
+  };
+
+
+  static struct ioapic {
+	  /*
+	   ,* # of IRQ routing registers
+	   ,*/
+	  int nr_registers;
+	  /*
+	   ,* Saved state during suspend/resume, or while enabling intr-remap.
+	   ,*/
+	  struct IO_APIC_route_entry *saved_registers;
+	  /* I/O APIC config */
+	  struct mpc_ioapic mp_config;
+	  /* IO APIC gsi routing info */
+	  struct mp_ioapic_gsi  gsi_config;
+	  struct ioapic_domain_cfg irqdomain_cfg;
+	  struct irq_domain *irqdomain;
+	  struct resource *iomem_res;
+  } ioapics[MAX_IO_APICS];
+#+end_src
+
+
+** actually configure io-apic
+
+#+begin_src dot :file pic/mp-register-ioapic.png
+  digraph {
+	  rankdir = LR
+	  node [shape = record]
+
+	  acpi_parse_ioapic -> mp_register_ioapic;
+
+	  mp_register_ioapic -> init_ioapics;
+	  mp_register_ioapic -> io_apic_get_redir_entries;
+	  mp_register_ioapic -> init_gsi_cfg;
+
+
+  }
+
+#+end_src
+
+#+RESULTS:
+[[file:pic/mp-register-ioapic.png]]
+
+
+
+
+
+
+* enable gsi

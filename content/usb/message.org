@@ -1,0 +1,10 @@
+#+title: the message in usb framework
+#+author: lhkwqy
+#+date:
+
+
+* ~usb_submit_urb~
+
+#+begin_src dot :file pic/usb_submit_urb.png
+
+#+end_src
